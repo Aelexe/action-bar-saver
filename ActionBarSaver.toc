@@ -1,0 +1,12 @@
+## Interface: 120007
+## Title: Action Bar Saver
+## Version: 0.0.1
+## Author: Aelexe
+## Notes: Utility addon for copying actionbars.
+## License: All rights reserved. Do not redistribute, in whole or in part, without explicit prior permission from the author.
+## SavedVariables: ActionBarSaverDB
+## OptionalDeps: Ace3
+
+embeds.xml
+
+ActionbarSaver.lua
