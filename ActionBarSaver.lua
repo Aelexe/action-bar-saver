@@ -4,12 +4,41 @@ function ActionBarSaver:OnInitialize()
 	-- Database Setup
 	local default = {
 		version = 1,
+		characterSpecific = false,
+		global = { copy = {} },
+		characters = {},
 	}
 
 	self.db = LibStub("AceDB-3.0"):New("ActionBarSaverDB", { profile = default }, true)
 
 	self:RegisterChatCommand("actionbarsaver", "SlashFunc")
 	self:RegisterChatCommand("abs", "SlashFunc")
+end
+
+function ActionBarSaver:GetCharacterKey()
+	return UnitGUID("player")
+end
+
+-- Returns the copy table to read/write, based on the Character Specific setting.
+function ActionBarSaver:GetCopyStore()
+	if self.db.profile.characterSpecific then
+		if type(self.db.profile.characters) ~= "table" then
+			self.db.profile.characters = {}
+		end
+
+		local key = self:GetCharacterKey()
+		if type(self.db.profile.characters[key]) ~= "table" then
+			self.db.profile.characters[key] = {}
+		end
+
+		return self.db.profile.characters[key]
+	end
+
+	if type(self.db.profile.global) ~= "table" then
+		self.db.profile.global = {}
+	end
+
+	return self.db.profile.global
 end
 
 function ActionBarSaver:SlashFunc(input)
@@ -66,19 +95,20 @@ function ActionBarSaver:SlashFunc(input)
 end
 
 function ActionBarSaver:HasCopiedData(actionBar)
-	if type(self.db.profile.copy) ~= "table" then
+	local copy = self:GetCopyStore().copy
+	if type(copy) ~= "table" then
 		return false
 	end
 
 	if actionBar == "all" then
-		return next(self.db.profile.copy) ~= nil
+		return next(copy) ~= nil
 	end
 
 	local firstSlot = self:GetActionBarFirstSlot(actionBar)
 	local lastSlot = firstSlot + 11
 
 	for slot = firstSlot, lastSlot do
-		if self.db.profile.copy[slot] ~= nil then
+		if copy[slot] ~= nil then
 			return true
 		end
 	end
@@ -101,7 +131,7 @@ function ActionBarSaver:OpenUI()
 	end
 
 	frame:SetWidth(400)
-	frame:SetHeight(90 + (#rows * 26))
+	frame:SetHeight(115 + (#rows * 26))
 
 	local scroll = AceGUI:Create("ScrollFrame")
 	scroll:SetLayout("List")
@@ -166,6 +196,25 @@ function ActionBarSaver:OpenUI()
 		table.insert(rowWidgets, { key = row.key, pasteButton = pasteButton, clearButton = clearButton })
 	end
 
+	local checkboxGroup = AceGUI:Create("SimpleGroup")
+	checkboxGroup:SetLayout("Flow")
+	checkboxGroup:SetFullWidth(true)
+
+	local spacer = AceGUI:Create("Label")
+	spacer:SetRelativeWidth(0.55)
+	checkboxGroup:AddChild(spacer)
+
+	local checkbox = AceGUI:Create("CheckBox")
+	checkbox:SetLabel("Character Specific")
+	checkbox:SetValue(self.db.profile.characterSpecific)
+	checkbox:SetCallback("OnValueChanged", function(_, _, value)
+		self.db.profile.characterSpecific = value
+		UpdateButtonStates()
+	end)
+	checkboxGroup:AddChild(checkbox)
+
+	scroll:AddChild(checkboxGroup)
+
 	UpdateButtonStates()
 end
 
@@ -193,8 +242,9 @@ end
 function ActionBarSaver:CopyBars(actionBars)
 	print("Copying bars: " .. table.concat(actionBars, ", "))
 
-	if type(self.db.profile.copy) ~= "table" then
-		self.db.profile.copy = {}
+	local store = self:GetCopyStore()
+	if type(store.copy) ~= "table" then
+		store.copy = {}
 	end
 
 	-- For each bar copy the slots.
@@ -209,23 +259,25 @@ function ActionBarSaver:CopyBars(actionBars)
 				if (actionType == "macro") then
 					id = GetActionText(slot)
 				end
-				self.db.profile.copy[slot] = { actionType = actionType, id = id, subType = subType }
+				store.copy[slot] = { actionType = actionType, id = id, subType = subType }
 			else
-				self.db.profile.copy[slot] = "nil"
+				store.copy[slot] = "nil"
 			end
 		end
 	end
 end
 
 function ActionBarSaver:ClearCopiedBars(actionBars)
+	local store = self:GetCopyStore()
+
 	if actionBars == nil then
-		self.db.profile.copy = {}
+		store.copy = {}
 		self:Print("Cleared all copied action bar data.")
 		return
 	end
 
-	if type(self.db.profile.copy) ~= "table" then
-		self.db.profile.copy = {}
+	if type(store.copy) ~= "table" then
+		store.copy = {}
 	end
 
 	for _, actionBar in pairs(actionBars) do
@@ -233,7 +285,7 @@ function ActionBarSaver:ClearCopiedBars(actionBars)
 		local lastSlot = firstSlot + 11
 
 		for slot = firstSlot, lastSlot do
-			self.db.profile.copy[slot] = nil
+			store.copy[slot] = nil
 		end
 	end
 
@@ -245,7 +297,8 @@ function ActionBarSaver:PasteBars(actionBars)
 		actionBars = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
 	end
 
-	if type(self.db.profile.copy) ~= "table" then
+	local copy = self:GetCopyStore().copy
+	if type(copy) ~= "table" then
 		self:Print("No copied action bar data.")
 		return
 	end
@@ -258,7 +311,7 @@ function ActionBarSaver:PasteBars(actionBars)
 		local lastSlot = firstSlot + 11
 
 		for slot = firstSlot, lastSlot do
-			self:PasteActionToSlot(slot, self.db.profile.copy[slot])
+			self:PasteActionToSlot(slot, copy[slot])
 		end
 	end
 
@@ -404,7 +457,7 @@ function ActionBarSaver:GetActionDisplayName(actionType, id, subType)
 end
 
 function ActionBarSaver:PrintCopyData(actionBars)
-	local copyData = self.db.profile.copy
+	local copyData = self:GetCopyStore().copy
 	if copyData == nil then
 		self:Print("No copied action bar data.")
 		return
