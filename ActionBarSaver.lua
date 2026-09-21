@@ -15,9 +15,9 @@ end
 function ActionBarSaver:SlashFunc(input)
 	local command, bars = self:GetArgs(input, 5)
 
-	-- If command is nil print an error message.
+	-- If command is nil open the UI instead of printing an error.
 	if command == nil then
-		self:Print("Invalid command.")
+		self:OpenUI()
 		return
 	end
 
@@ -63,6 +63,110 @@ function ActionBarSaver:SlashFunc(input)
 	elseif command == "print" then
 		self:PrintCopyData()
 	end
+end
+
+function ActionBarSaver:HasCopiedData(actionBar)
+	if type(self.db.profile.copy) ~= "table" then
+		return false
+	end
+
+	if actionBar == "all" then
+		return next(self.db.profile.copy) ~= nil
+	end
+
+	local firstSlot = self:GetActionBarFirstSlot(actionBar)
+	local lastSlot = firstSlot + 11
+
+	for slot = firstSlot, lastSlot do
+		if self.db.profile.copy[slot] ~= nil then
+			return true
+		end
+	end
+
+	return false
+end
+
+function ActionBarSaver:OpenUI()
+	local AceGUI = LibStub("AceGUI-3.0")
+
+	local frame = AceGUI:Create("Frame")
+	frame:SetTitle("Action Bar Saver")
+	frame:SetStatusText("Copy, paste or clear saved action bars.")
+	frame:SetLayout("Fill")
+
+	-- Rows for "All" plus every individual action bar.
+	local rows = { { label = "All", key = "all", bars = self:ParseBarList("all") } }
+	for i = 1, 15 do
+		table.insert(rows, { label = tostring(i), key = i, bars = { i } })
+	end
+
+	frame:SetWidth(400)
+	frame:SetHeight(90 + (#rows * 26))
+
+	local scroll = AceGUI:Create("ScrollFrame")
+	scroll:SetLayout("List")
+	frame:AddChild(scroll)
+
+	local rowWidgets = {}
+
+	local function UpdateButtonStates()
+		for _, rowWidget in ipairs(rowWidgets) do
+			local hasData = self:HasCopiedData(rowWidget.key)
+			rowWidget.pasteButton:SetDisabled(not hasData)
+			rowWidget.clearButton:SetDisabled(not hasData)
+		end
+	end
+
+	for _, row in ipairs(rows) do
+		local group = AceGUI:Create("SimpleGroup")
+		group:SetLayout("Flow")
+		group:SetFullWidth(true)
+
+		local label = AceGUI:Create("Label")
+		label:SetText(row.label)
+		label:SetWidth(50)
+		group:AddChild(label)
+
+		local copyButton = AceGUI:Create("Button")
+		copyButton:SetText("Copy")
+		copyButton:SetWidth(70)
+		copyButton:SetCallback("OnClick", function()
+			self:CopyBars(row.bars)
+			UpdateButtonStates()
+		end)
+		group:AddChild(copyButton)
+
+		local pasteButton = AceGUI:Create("Button")
+		pasteButton:SetText("Paste")
+		pasteButton:SetWidth(70)
+		pasteButton:SetCallback("OnClick", function()
+			self:PasteBars(row.bars)
+			UpdateButtonStates()
+		end)
+		group:AddChild(pasteButton)
+
+		local clearButton = AceGUI:Create("Button")
+		clearButton:SetText("Clear")
+		clearButton:SetWidth(70)
+		clearButton:SetCallback("OnClick", function()
+			self:ClearCopiedBars(row.bars)
+			UpdateButtonStates()
+		end)
+		group:AddChild(clearButton)
+
+		local infoButton = AceGUI:Create("Button")
+		infoButton:SetText("Info")
+		infoButton:SetWidth(70)
+		infoButton:SetCallback("OnClick", function()
+			self:PrintCopyData(row.bars)
+		end)
+		group:AddChild(infoButton)
+
+		scroll:AddChild(group)
+		table.insert(rowWidgets, { key = row.key, pasteButton = pasteButton, clearButton = clearButton })
+	end
+
+	UpdateButtonStates()
 end
 
 function ActionBarSaver:ParseBarList(bars)
@@ -228,7 +332,7 @@ function ActionBarSaver:GetFlyoutSpellBookSlot(flyoutID)
 				local numSlots = skillLineInfo.numSpellBookItems or 0
 				for slotIndex = offset + 1, offset + numSlots do
 					local itemType, actionID = C_SpellBook.GetSpellBookItemType(slotIndex, Enum.SpellBookSpellBank
-					.Player)
+						.Player)
 					if itemType == Enum.SpellBookItemType.Flyout and actionID == flyoutID then
 						return slotIndex
 					end
@@ -299,16 +403,31 @@ function ActionBarSaver:GetActionDisplayName(actionType, id, subType)
 	return nil
 end
 
-function ActionBarSaver:PrintCopyData()
+function ActionBarSaver:PrintCopyData(actionBars)
 	local copyData = self.db.profile.copy
 	if copyData == nil then
 		self:Print("No copied action bar data.")
 		return
 	end
 
+	-- Restrict to the slot ranges of the given bars, if provided.
+	local allowedSlots = nil
+	if actionBars ~= nil then
+		allowedSlots = {}
+		for _, actionBar in pairs(actionBars) do
+			local firstSlot = self:GetActionBarFirstSlot(actionBar)
+			local lastSlot = firstSlot + 11
+			for slot = firstSlot, lastSlot do
+				allowedSlots[slot] = true
+			end
+		end
+	end
+
 	local slots = {}
 	for slot, _ in pairs(copyData) do
-		table.insert(slots, slot)
+		if allowedSlots == nil or allowedSlots[slot] then
+			table.insert(slots, slot)
+		end
 	end
 
 	if #slots == 0 then
