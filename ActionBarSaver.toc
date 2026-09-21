@@ -10,3 +10,7 @@
 embeds.xml
 
 ActionbarSaver.lua
+BarData.lua
+ActionInfo.lua
+Print.lua
+UI.lua
